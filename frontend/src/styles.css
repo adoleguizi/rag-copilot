@@ -80,6 +80,7 @@ h1 {
 }
 
 .status-card,
+.upload-card,
 .question-card,
 .answer-card {
   border: 1px solid var(--line);
@@ -151,10 +152,19 @@ dd {
   gap: 24px;
 }
 
+.left-stack {
+  display: grid;
+  gap: 24px;
+}
+
+.upload-card,
 .question-card,
 .answer-card {
-  min-height: 560px;
   padding: 24px;
+}
+
+.answer-card {
+  min-height: 560px;
 }
 
 .card-heading,
@@ -213,6 +223,90 @@ select:focus {
 
 .sample:hover {
   background: rgba(120, 155, 115, 0.24);
+}
+
+.file-picker {
+  display: grid;
+  place-items: center;
+  min-height: 118px;
+  border: 1px dashed rgba(40, 77, 59, 0.32);
+  border-radius: 22px;
+  color: var(--moss);
+  background: rgba(120, 155, 115, 0.1);
+  text-align: center;
+  cursor: pointer;
+}
+
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-picker span {
+  padding: 18px;
+  font-weight: 900;
+}
+
+.pending-files,
+.document-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pending-files li,
+.document-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.pending-files span,
+.document-list span,
+.pending-files li,
+.document-list li {
+  overflow-wrap: anywhere;
+}
+
+.pending-files small,
+.document-list small,
+.document-empty {
+  color: var(--muted);
+}
+
+.document-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.secondary {
+  border: 1px solid rgba(40, 77, 59, 0.2);
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: var(--moss);
+  background: rgba(255, 255, 255, 0.6);
+  font-weight: 900;
+}
+
+.secondary.dark {
+  color: #fffaf1;
+  background: var(--moss);
+}
+
+.secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .controls {
@@ -305,13 +399,21 @@ input {
   font-size: 3rem;
 }
 
+.notice,
 .error {
   border: 1px solid rgba(217, 93, 57, 0.3);
   border-radius: 18px;
   padding: 16px;
+  margin-bottom: 16px;
   color: var(--accent-dark);
   background: rgba(217, 93, 57, 0.1);
   font-weight: 800;
+}
+
+.notice {
+  border-color: rgba(120, 155, 115, 0.34);
+  color: var(--moss);
+  background: rgba(120, 155, 115, 0.14);
 }
 
 .answer-text {
@@ -389,6 +491,7 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .upload-card,
   .question-card,
   .answer-card {
     min-height: auto;
@@ -402,11 +505,13 @@ pre {
   }
 
   .controls,
-  .citation {
+  .citation,
+  .document-actions {
     grid-template-columns: 1fr;
   }
 
   .status-card,
+  .upload-card,
   .question-card,
   .answer-card {
     border-radius: 22px;

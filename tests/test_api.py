@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -58,6 +59,44 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.citations[0].source, "skills.md")
         self.assertIsNotNone(response.prompt)
         self.assertIn("Python and SQL are programming skills.", response.prompt)
+
+    def test_list_documents_reads_supported_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_raw_docs_dir = api.RAW_DOCS_DIR
+            api.RAW_DOCS_DIR = Path(temp_dir)
+            try:
+                (api.RAW_DOCS_DIR / "faq.md").write_text("FAQ content", encoding="utf-8")
+                (api.RAW_DOCS_DIR / "ignored.exe").write_text("nope", encoding="utf-8")
+
+                documents = api.list_documents()
+
+                self.assertEqual([document.name for document in documents], ["faq.md"])
+            finally:
+                api.RAW_DOCS_DIR = original_raw_docs_dir
+
+    def test_rebuild_index_updates_retriever_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_raw_docs_dir = api.RAW_DOCS_DIR
+            original_index_dir = api.INDEX_DIR
+            api.RAW_DOCS_DIR = Path(temp_dir) / "raw"
+            api.INDEX_DIR = Path(temp_dir) / "index"
+            api.RAW_DOCS_DIR.mkdir()
+            (api.RAW_DOCS_DIR / "knowledge.md").write_text(
+                "# Skills\nPython and SQL are listed skills.",
+                encoding="utf-8",
+            )
+
+            try:
+                response = api.rebuild_index(api.RebuildIndexRequest(chunk_size=200, chunk_overlap=20))
+
+                self.assertEqual(response.documents, 1)
+                self.assertGreaterEqual(response.chunks, 1)
+                self.assertIsNotNone(api._retriever_cache)
+                self.assertTrue((api.INDEX_DIR / "vector_index.json").exists())
+            finally:
+                api.RAW_DOCS_DIR = original_raw_docs_dir
+                api.INDEX_DIR = original_index_dir
+                api._retriever_cache = None
 
 
 if __name__ == "__main__":
