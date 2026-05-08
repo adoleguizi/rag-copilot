@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -12,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .chunking import chunk_documents
-from .config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_MIN_SCORE, DEFAULT_TOP_K, INDEX_DIR, PROJECT_ROOT, RAW_DOCS_DIR
+from .config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_MIN_SCORE, DEFAULT_TOP_K, INDEX_DIR, PROCESSED_DIR, PROJECT_ROOT, RAW_DOCS_DIR
 from .ingest import SUPPORTED_SUFFIXES, load_documents
 from .llm import DEFAULT_DASHSCOPE_MODEL, create_model
 from .rag_chain import RAGChain
@@ -64,6 +65,7 @@ app.add_middleware(
 )
 
 _retriever_cache: VectorRetriever | None = None
+DELETED_DOCUMENTS_FILE = PROCESSED_DIR / "deleted_documents.json"
 
 
 class AskRequest(BaseModel):
@@ -117,6 +119,7 @@ class RebuildIndexRequest(BaseModel):
 
 
 class RebuildIndexResponse(BaseModel):
+    files: int
     documents: int
     chunks: int
     index_path: str
@@ -137,9 +140,10 @@ def health() -> HealthResponse:
 @app.get("/documents", response_model=list[DocumentResponse])
 def list_documents() -> list[DocumentResponse]:
     RAW_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    deleted_documents = _load_deleted_documents()
     documents: list[DocumentResponse] = []
     for path in sorted(RAW_DOCS_DIR.iterdir()):
-        if path.is_file() and path.suffix.lower() in SUPPORTED_SUFFIXES:
+        if path.is_file() and path.suffix.lower() in SUPPORTED_SUFFIXES and path.name not in deleted_documents:
             documents.append(
                 DocumentResponse(
                     name=path.name,
@@ -168,6 +172,8 @@ def upload_documents(files: list[UploadFile] = File(...)) -> UploadResponse:
         with target.open("wb") as handle:
             shutil.copyfileobj(upload.file, handle)
 
+        _remove_deleted_document(target.name)
+
         saved_files.append(
             DocumentResponse(
                 name=target.name,
@@ -179,13 +185,36 @@ def upload_documents(files: list[UploadFile] = File(...)) -> UploadResponse:
     return UploadResponse(files=saved_files)
 
 
+@app.delete("/documents/{filename}", response_model=DocumentResponse)
+def delete_document(filename: str) -> DocumentResponse:
+    safe_name = _safe_upload_name(filename)
+    target = RAW_DOCS_DIR / safe_name
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail=f"Document not found: {safe_name}")
+    if target.suffix.lower() not in SUPPORTED_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"Unsupported document type: {target.suffix}")
+
+    response = DocumentResponse(
+        name=target.name,
+        size=target.stat().st_size,
+        suffix=target.suffix.lower(),
+    )
+    _mark_deleted_document(target.name)
+    return response
+
+
 @app.post("/index/rebuild", response_model=RebuildIndexResponse)
 def rebuild_index(request: RebuildIndexRequest | None = None) -> RebuildIndexResponse:
     global _retriever_cache
 
     request = request or RebuildIndexRequest()
     try:
-        documents = load_documents(RAW_DOCS_DIR)
+        deleted_documents = _load_deleted_documents()
+        documents = [
+            document
+            for document in load_documents(RAW_DOCS_DIR)
+            if str(document.metadata.get("file_name", "")) not in deleted_documents
+        ]
         chunks = chunk_documents(
             documents,
             chunk_size=request.chunk_size,
@@ -198,6 +227,7 @@ def rebuild_index(request: RebuildIndexRequest | None = None) -> RebuildIndexRes
 
     _retriever_cache = retriever
     return RebuildIndexResponse(
+        files=len(list_documents()),
         documents=len(documents),
         chunks=len(chunks),
         index_path=str(index_path),
@@ -272,3 +302,39 @@ def _safe_upload_name(filename: str | None) -> str:
     if not name or name in {".", ".."}:
         raise HTTPException(status_code=400, detail="Invalid filename")
     return name
+
+
+def _load_deleted_documents() -> set[str]:
+    if not DELETED_DOCUMENTS_FILE.exists():
+        return set()
+
+    try:
+        data = json.loads(DELETED_DOCUMENTS_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid deleted document registry: {DELETED_DOCUMENTS_FILE}") from exc
+
+    if not isinstance(data, list):
+        raise HTTPException(status_code=500, detail=f"Invalid deleted document registry: {DELETED_DOCUMENTS_FILE}")
+
+    return {str(item) for item in data if str(item).strip()}
+
+
+def _write_deleted_documents(names: set[str]) -> None:
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    DELETED_DOCUMENTS_FILE.write_text(
+        json.dumps(sorted(names), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _mark_deleted_document(name: str) -> None:
+    names = _load_deleted_documents()
+    names.add(name)
+    _write_deleted_documents(names)
+
+
+def _remove_deleted_document(name: str) -> None:
+    names = _load_deleted_documents()
+    if name in names:
+        names.remove(name)
+        _write_deleted_documents(names)

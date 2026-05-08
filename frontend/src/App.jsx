@@ -101,7 +101,9 @@ export default function App() {
         throw new Error(payload.detail || `Rebuild failed: HTTP ${response.status}`);
       }
 
-      setNotice(`索引已重建：${payload.documents} 个文档，${payload.chunks} 个 chunks。`);
+      setNotice(
+        `索引已重建：${payload.files} 个源文件，${payload.documents} 个文档单元，${payload.chunks} 个 chunks。PDF 会按页计作文档单元。`,
+      );
       await refreshBackendState();
     } catch (err) {
       setError(err.message);
@@ -144,6 +146,26 @@ export default function App() {
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleDeleteDocument(name) {
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || `Delete failed: HTTP ${response.status}`);
+      }
+
+      setNotice(`已删除 ${payload.name}。请重建索引后再提问。`);
+      await refreshBackendState();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   return (
@@ -199,7 +221,7 @@ export default function App() {
               </div>
             </form>
 
-            <DocumentList documents={documents} />
+            <DocumentList documents={documents} onDelete={handleDeleteDocument} />
           </section>
 
           <form className="question-card" onSubmit={handleSubmit}>
@@ -314,7 +336,7 @@ function StatusCard({ health }) {
   );
 }
 
-function DocumentList({ documents }) {
+function DocumentList({ documents, onDelete }) {
   if (documents.length === 0) {
     return <p className="document-empty">还没有上传文档。</p>;
   }
@@ -324,9 +346,14 @@ function DocumentList({ documents }) {
       {documents.map((document) => (
         <li key={document.name}>
           <span>{document.name}</span>
-          <small>{formatBytes(document.size)}</small>
-        </li>
-      ))}
+            <div className="document-meta">
+              <small>{formatBytes(document.size)}</small>
+              <button type="button" onClick={() => onDelete(document.name)}>
+              Remove from index
+              </button>
+            </div>
+          </li>
+        ))}
     </ul>
   );
 }

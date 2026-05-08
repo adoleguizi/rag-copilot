@@ -263,6 +263,7 @@ select:focus {
 .document-list li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -281,6 +282,23 @@ select:focus {
 .document-list small,
 .document-empty {
   color: var(--muted);
+}
+
+.document-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.document-meta button {
+  border: 1px solid rgba(217, 93, 57, 0.28);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--accent-dark);
+  background: rgba(217, 93, 57, 0.08);
+  font-size: 0.78rem;
+  font-weight: 900;
 }
 
 .document-actions {

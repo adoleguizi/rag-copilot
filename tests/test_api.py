@@ -63,7 +63,11 @@ class ApiTests(unittest.TestCase):
     def test_list_documents_reads_supported_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             original_raw_docs_dir = api.RAW_DOCS_DIR
+            original_processed_dir = api.PROCESSED_DIR
+            original_deleted_documents_file = api.DELETED_DOCUMENTS_FILE
             api.RAW_DOCS_DIR = Path(temp_dir)
+            api.PROCESSED_DIR = Path(temp_dir) / "processed"
+            api.DELETED_DOCUMENTS_FILE = api.PROCESSED_DIR / "deleted_documents.json"
             try:
                 (api.RAW_DOCS_DIR / "faq.md").write_text("FAQ content", encoding="utf-8")
                 (api.RAW_DOCS_DIR / "ignored.exe").write_text("nope", encoding="utf-8")
@@ -73,13 +77,42 @@ class ApiTests(unittest.TestCase):
                 self.assertEqual([document.name for document in documents], ["faq.md"])
             finally:
                 api.RAW_DOCS_DIR = original_raw_docs_dir
+                api.PROCESSED_DIR = original_processed_dir
+                api.DELETED_DOCUMENTS_FILE = original_deleted_documents_file
+
+    def test_delete_document_marks_file_hidden_but_keeps_local_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_raw_docs_dir = api.RAW_DOCS_DIR
+            original_processed_dir = api.PROCESSED_DIR
+            original_deleted_documents_file = api.DELETED_DOCUMENTS_FILE
+            api.RAW_DOCS_DIR = Path(temp_dir)
+            api.PROCESSED_DIR = Path(temp_dir) / "processed"
+            api.DELETED_DOCUMENTS_FILE = api.PROCESSED_DIR / "deleted_documents.json"
+            try:
+                path = api.RAW_DOCS_DIR / "faq.md"
+                path.write_text("FAQ content", encoding="utf-8")
+
+                response = api.delete_document("faq.md")
+
+                self.assertEqual(response.name, "faq.md")
+                self.assertTrue(path.exists())
+                self.assertIn("faq.md", api._load_deleted_documents())
+                self.assertEqual(api.list_documents(), [])
+            finally:
+                api.RAW_DOCS_DIR = original_raw_docs_dir
+                api.PROCESSED_DIR = original_processed_dir
+                api.DELETED_DOCUMENTS_FILE = original_deleted_documents_file
 
     def test_rebuild_index_updates_retriever_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             original_raw_docs_dir = api.RAW_DOCS_DIR
             original_index_dir = api.INDEX_DIR
+            original_processed_dir = api.PROCESSED_DIR
+            original_deleted_documents_file = api.DELETED_DOCUMENTS_FILE
             api.RAW_DOCS_DIR = Path(temp_dir) / "raw"
             api.INDEX_DIR = Path(temp_dir) / "index"
+            api.PROCESSED_DIR = Path(temp_dir) / "processed"
+            api.DELETED_DOCUMENTS_FILE = api.PROCESSED_DIR / "deleted_documents.json"
             api.RAW_DOCS_DIR.mkdir()
             (api.RAW_DOCS_DIR / "knowledge.md").write_text(
                 "# Skills\nPython and SQL are listed skills.",
@@ -89,6 +122,7 @@ class ApiTests(unittest.TestCase):
             try:
                 response = api.rebuild_index(api.RebuildIndexRequest(chunk_size=200, chunk_overlap=20))
 
+                self.assertEqual(response.files, 1)
                 self.assertEqual(response.documents, 1)
                 self.assertGreaterEqual(response.chunks, 1)
                 self.assertIsNotNone(api._retriever_cache)
@@ -96,6 +130,37 @@ class ApiTests(unittest.TestCase):
             finally:
                 api.RAW_DOCS_DIR = original_raw_docs_dir
                 api.INDEX_DIR = original_index_dir
+                api.PROCESSED_DIR = original_processed_dir
+                api.DELETED_DOCUMENTS_FILE = original_deleted_documents_file
+                api._retriever_cache = None
+
+    def test_rebuild_index_skips_deleted_documents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_raw_docs_dir = api.RAW_DOCS_DIR
+            original_index_dir = api.INDEX_DIR
+            original_processed_dir = api.PROCESSED_DIR
+            original_deleted_documents_file = api.DELETED_DOCUMENTS_FILE
+            api.RAW_DOCS_DIR = Path(temp_dir) / "raw"
+            api.INDEX_DIR = Path(temp_dir) / "index"
+            api.PROCESSED_DIR = Path(temp_dir) / "processed"
+            api.DELETED_DOCUMENTS_FILE = api.PROCESSED_DIR / "deleted_documents.json"
+            api.RAW_DOCS_DIR.mkdir()
+            (api.RAW_DOCS_DIR / "active.md").write_text("Active document", encoding="utf-8")
+            (api.RAW_DOCS_DIR / "hidden.md").write_text("Hidden document", encoding="utf-8")
+            api._mark_deleted_document("hidden.md")
+
+            try:
+                response = api.rebuild_index(api.RebuildIndexRequest(chunk_size=200, chunk_overlap=20))
+
+                self.assertEqual(response.files, 1)
+                self.assertEqual(response.documents, 1)
+                self.assertGreaterEqual(response.chunks, 1)
+                self.assertIsNotNone(api._retriever_cache)
+            finally:
+                api.RAW_DOCS_DIR = original_raw_docs_dir
+                api.INDEX_DIR = original_index_dir
+                api.PROCESSED_DIR = original_processed_dir
+                api.DELETED_DOCUMENTS_FILE = original_deleted_documents_file
                 api._retriever_cache = None
 
 
